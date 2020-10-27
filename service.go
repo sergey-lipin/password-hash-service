@@ -49,6 +49,10 @@ func (s *HashService) initiateShutdown() {
 	})
 }
 
+type hashIdentifier struct {
+	ID uint64 `json:"id"`
+}
+
 type hashValue struct {
 	Hash string `json:"hash"`
 }
@@ -62,7 +66,8 @@ func (s *HashService) Run() {
 	hashPostHandler := func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
-			defer s.Stats.Update(time.Now())
+			startTime := time.Now()
+			defer s.Stats.Update(startTime)
 			if r.URL.Path != hashRoutePath {
 				log.Printf("hashPostHandler: Not found (%v)\n", r.URL)
 				http.Error(w, "Not found", http.StatusNotFound)
@@ -85,9 +90,11 @@ func (s *HashService) Run() {
 				http.Error(w, "Internal server error", http.StatusInternalServerError)
 				return
 			}
+			val := hashIdentifier{ID: u}
 			w.Header().Set("Location", hashRoutePath+"/"+strconv.FormatUint(u, 10))
+			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusCreated)
-			w.Write([]byte("Created"))
+			json.NewEncoder(w).Encode(val)
 			break
 		default:
 			log.Printf("hashPostHandler: Method %v not allowed\n", r.Method)
@@ -99,12 +106,12 @@ func (s *HashService) Run() {
 		switch r.Method {
 		case http.MethodGet:
 			parts := strings.Split(r.URL.Path, "/")
-			if len(parts) != 2 || "/"+parts[0] != hashRoutePath {
+			if len(parts) != 3 || parts[0] != "" || "/"+parts[1] != hashRoutePath {
 				log.Printf("hashGetHandler: Not found (%v)\n", r.URL)
 				http.Error(w, "Not found", http.StatusNotFound)
 				return
 			}
-			u, err := strconv.ParseUint(parts[1], 10, 64)
+			u, err := strconv.ParseUint(parts[2], 10, 64)
 			if err != nil {
 				log.Printf("hashGetHandler: Bad request: %v\n", err)
 				http.Error(w, "Bad request", http.StatusBadRequest)
