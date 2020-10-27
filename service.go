@@ -19,55 +19,59 @@ const (
 
 // HashService represents the password hashing service implementation
 type HashService struct {
-	Srv             http.Server
-	IdleConnsClosed chan struct{}
-	Once            sync.Once
-	Storage         *HashStorage
-	Stats           *HashStatsStorage
+	srv             http.Server
+	idleConnsClosed chan struct{}
+	once            sync.Once
+	storage         *HashStorage
+	stats           *HashStatsStorage
 }
 
 // NewHashService constructs a new instance of the password hashing service
 func NewHashService(httpAddr *string) *HashService {
 	hashService := &HashService{}
-	hashService.Srv = http.Server{Addr: *httpAddr}
-	hashService.IdleConnsClosed = make(chan struct{})
-	hashService.Storage = NewHashStorage()
-	hashService.Stats = NewHashStatsStorage()
+	hashService.srv = http.Server{Addr: *httpAddr}
+	hashService.idleConnsClosed = make(chan struct{})
+	hashService.storage = NewHashStorage()
+	hashService.stats = NewHashStatsStorage()
 	return hashService
 }
 
+// Grecefully shut down the server
 func (s *HashService) initiateShutdown() {
-	s.Once.Do(func() {
+	s.once.Do(func() {
 		go func() {
 			// We received a shutdown command, shut down.
-			if err := s.Srv.Shutdown(context.Background()); err != nil {
+			if err := s.srv.Shutdown(context.Background()); err != nil {
 				// Error from closing listeners, or context timeout:
 				log.Printf("HTTP server Shutdown: %v\n", err)
 			}
-			close(s.IdleConnsClosed)
+			close(s.idleConnsClosed)
 		}()
 	})
 }
 
+// Helper structs for returning JSON
 type hashIdentifier struct {
 	ID uint64 `json:"id"`
 }
-
 type hashValue struct {
 	Hash string `json:"hash"`
 }
 
 // Run executes the password hashing service
 func (s *HashService) Run() {
+	// The handler for the web service root - always returns StatusNotFound
 	homeHandler := func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("homeHandler: Not found (%v)\n", r.URL)
 		http.Error(w, "Not found", http.StatusNotFound)
 	}
+
+	// The handler for the the new password hash creation calls
 	hashPostHandler := func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
 			startTime := time.Now()
-			defer s.Stats.Update(startTime)
+			defer s.stats.Update(startTime)
 			if r.URL.Path != hashRoutePath {
 				log.Printf("hashPostHandler: Not found (%v)\n", r.URL)
 				http.Error(w, "Not found", http.StatusNotFound)
@@ -84,7 +88,7 @@ func (s *HashService) Run() {
 				http.Error(w, "Bad request", http.StatusBadRequest)
 				return
 			}
-			u, err := s.Storage.AddPassword(pw)
+			u, err := s.storage.AddPassword(pw)
 			if err != nil {
 				log.Printf("hashPostHandler: Internal server error: %v\n", err)
 				http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -102,6 +106,8 @@ func (s *HashService) Run() {
 			break
 		}
 	}
+
+	// The handler for the the password hash retrieval calls
 	hashGetHandler := func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -117,7 +123,7 @@ func (s *HashService) Run() {
 				http.Error(w, "Bad request", http.StatusBadRequest)
 				return
 			}
-			hash, ok := s.Storage.GetPasswordHash(u)
+			hash, ok := s.storage.GetPasswordHash(u)
 			if !ok {
 				log.Printf("hashGetHandler: Not found (%v)\n", r.URL)
 				http.Error(w, "Not found", http.StatusNotFound)
@@ -134,6 +140,8 @@ func (s *HashService) Run() {
 			break
 		}
 	}
+
+	// The handler for the the statistics retrieval calls
 	statsHandler := func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -142,7 +150,7 @@ func (s *HashService) Run() {
 				http.Error(w, "Not found", http.StatusNotFound)
 				return
 			}
-			stats := s.Stats.GetCurrentStats()
+			stats := s.stats.GetCurrentStats()
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			json.NewEncoder(w).Encode(stats)
@@ -153,6 +161,8 @@ func (s *HashService) Run() {
 			break
 		}
 	}
+
+	// The handler for the the graceful shutdown calls
 	shutdownHandler := func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
@@ -180,11 +190,11 @@ func (s *HashService) Run() {
 	http.HandleFunc(shutdownRoutePath, shutdownHandler)
 
 	// Begin listening for incoming connections
-	if err := s.Srv.ListenAndServe(); err != http.ErrServerClosed {
+	if err := s.srv.ListenAndServe(); err != http.ErrServerClosed {
 		// Error starting or closing listener:
 		log.Fatalf("HTTP server ListenAndServe: %v\n", err)
 	}
 
 	// Wait for graceful shutdown
-	<-s.IdleConnsClosed
+	<-s.idleConnsClosed
 }
