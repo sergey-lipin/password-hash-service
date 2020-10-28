@@ -3,7 +3,9 @@ package main
 import (
 	"crypto/sha512"
 	"encoding/base64"
+	"log"
 	"sync"
+	"time"
 )
 
 // HashStorage represents the password hash storage implementation
@@ -19,20 +21,30 @@ func NewHashStorage() *HashStorage {
 	return hashStorage
 }
 
-// AddPassword adds a new pasword hash record to the storage and returns its identifier
-func (s *HashStorage) AddPassword(pw string) (u uint64, err error) {
-	alg := sha512.New()
-	_, err = alg.Write([]byte(pw))
-	if err != nil {
-		return
-	}
-	encodedHash := base64.StdEncoding.EncodeToString(alg.Sum(nil))
+// AddPassword adds a new pasword hash record to the storage and returns its identifier.
+// The hash calculation is delayed by 5 seconds
+func (s *HashStorage) AddPassword(pw string) uint64 {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.currentKey++
-	s.data[s.currentKey] = encodedHash
-	u = s.currentKey
-	return
+	u := s.currentKey
+	s.mu.Unlock()
+
+	go func() {
+		time.Sleep(5 * time.Second)
+
+		alg := sha512.New()
+		_, err := alg.Write([]byte(pw))
+		if err != nil {
+			log.Printf("Error while calculating hash: %v\n", err)
+			return
+		}
+		encodedHash := base64.StdEncoding.EncodeToString(alg.Sum(nil))
+
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.data[u] = encodedHash
+	}()
+	return u
 }
 
 // GetPasswordHash returns the previously stored hash

@@ -88,12 +88,7 @@ func (s *HashService) Run() {
 				http.Error(w, "Bad request", http.StatusBadRequest)
 				return
 			}
-			u, err := s.storage.AddPassword(pw)
-			if err != nil {
-				log.Printf("hashPostHandler: Internal server error: %v\n", err)
-				http.Error(w, "Internal server error", http.StatusInternalServerError)
-				return
-			}
+			u := s.storage.AddPassword(pw)
 			val := hashIdentifier{ID: u}
 			w.Header().Set("Location", hashRoutePath+"/"+strconv.FormatUint(u, 10))
 			w.Header().Set("Content-Type", "application/json")
