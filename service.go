@@ -38,9 +38,9 @@ func NewHashService(httpAddr *string) *HashService {
 
 // Grecefully shut down the server
 func (s *HashService) initiateShutdown() {
+	// We received a shutdown command, shut down. Make sure we call it only once.
 	s.once.Do(func() {
 		go func() {
-			// We received a shutdown command, shut down.
 			if err := s.srv.Shutdown(context.Background()); err != nil {
 				// Error from closing listeners, or context timeout:
 				log.Printf("HTTP server Shutdown: %v\n", err)

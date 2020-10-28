@@ -21,7 +21,7 @@ func NewHashStorage() *HashStorage {
 	return hashStorage
 }
 
-// AddPassword adds a new pasword hash record to the storage and returns its identifier.
+// AddPassword adds a new password hash record to the storage and returns its identifier.
 // The hash calculation is delayed by 5 seconds
 func (s *HashStorage) AddPassword(pw string) uint64 {
 	s.mu.Lock()
